@@ -632,6 +632,94 @@ function buildMessage(type, name, detail) {
 }
 
 /* ════════════════════════════
+   AUDIO — Web Audio chimes
+════════════════════════════ */
+var audioCtx = null;
+
+function getCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+// Play a single bell tone: freq, start time (offset from now), duration, volume
+function bell(ctx, freq, when, dur, vol) {
+  vol = vol || 0.5;
+  var osc  = ctx.createOscillator();
+  var gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq, when);
+  // Slightly detune a second oscillator for richness
+  var osc2  = ctx.createOscillator();
+  var gain2 = ctx.createGain();
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(freq * 2.005, when); // slight upper harmonic
+  gain2.gain.setValueAtTime(vol * 0.18, when);
+  gain2.gain.exponentialRampToValueAtTime(0.0001, when + dur * 0.9);
+  osc2.start(when);
+  osc2.stop(when + dur);
+
+  // Bell envelope: sharp attack, long exponential decay
+  gain.gain.setValueAtTime(0.0001, when);
+  gain.gain.linearRampToValueAtTime(vol, when + 0.008);
+  gain.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+
+  osc.start(when);
+  osc.stop(when + dur);
+}
+
+// Melodies — each is an array of [freq, timeOffset, duration, volume]
+var CHIMES = {
+  // Follower: gentle ascending 3-note chime, soft & airy
+  follower: function(ctx, t) {
+    bell(ctx, 880,  t,        1.4, 0.32);  // A5
+    bell(ctx, 1047, t + 0.18, 1.2, 0.28); // C6
+    bell(ctx, 1319, t + 0.36, 1.6, 0.24); // E6
+    bell(ctx, 1760, t + 0.60, 2.0, 0.18); // A6 shimmer
+  },
+  // Subscriber: warm celebratory 4-note ascending arpeggio
+  subscriber: function(ctx, t) {
+    bell(ctx, 523,  t,        1.8, 0.38); // C5
+    bell(ctx, 659,  t + 0.15, 1.6, 0.34); // E5
+    bell(ctx, 784,  t + 0.30, 1.5, 0.30); // G5
+    bell(ctx, 1047, t + 0.45, 2.2, 0.38); // C6 — big finish
+    bell(ctx, 1319, t + 0.70, 1.8, 0.18); // E6 sparkle
+  },
+  // Donation: bright coin-like shimmer, two quick high pings then a warm low bell
+  donation: function(ctx, t) {
+    bell(ctx, 1568, t,        0.8, 0.30); // G6 — bright ping
+    bell(ctx, 1760, t + 0.10, 0.7, 0.28); // A6 — brighter ping
+    bell(ctx, 1319, t + 0.22, 1.0, 0.22); // E6
+    bell(ctx, 784,  t + 0.40, 2.2, 0.40); // G5 — warm resonant
+    bell(ctx, 523,  t + 0.65, 2.0, 0.20); // C5 low warmth
+  },
+  // Raid: dramatic descending-then-rising fanfare
+  raid: function(ctx, t) {
+    bell(ctx, 392,  t,        1.4, 0.36); // G4 — low rumble bell
+    bell(ctx, 494,  t + 0.20, 1.2, 0.30); // B4
+    bell(ctx, 659,  t + 0.38, 1.2, 0.28); // E5
+    bell(ctx, 523,  t + 0.54, 1.0, 0.24); // C5 dip
+    bell(ctx, 784,  t + 0.70, 1.8, 0.38); // G5 rise
+    bell(ctx, 1047, t + 0.92, 2.0, 0.34); // C6 triumph
+    bell(ctx, 1319, t + 1.15, 1.6, 0.20); // E6 shimmer out
+  }
+};
+
+function playChime(type) {
+  try {
+    var ctx  = getCtx();
+    var fn   = CHIMES[type] || CHIMES['follower'];
+    fn(ctx, ctx.currentTime + 0.05);
+  } catch(e) {
+    // Audio unavailable — silent fail
+  }
+}
+
+/* ════════════════════════════
    QUEUE
 ════════════════════════════ */
 var alertQueue = [];
@@ -685,6 +773,7 @@ function showAlert(type, name, detail, onDone) {
     requestAnimationFrame(function() {
       alertEl.classList.add('show');
       spawnParticles(alertEl, cfg.particles);
+      playChime(type);
     });
   });
 
